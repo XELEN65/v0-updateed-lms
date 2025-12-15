@@ -14,6 +14,8 @@ interface CurrentUser {
   username: string
   email: string
   fullName: string
+  firstName?: string
+  lastName?: string
   role: "teacher" | "admin" | "student" | "instructor"
 }
 
@@ -28,14 +30,18 @@ export default function Home() {
       username?: string,
       userId?: number,
       email?: string,
-      fullName?: string
+      fullName?: string,
+      firstName?: string,
+      lastName?: string
   ) => {
     // Store user data
     setCurrentUser({
-      id: userId || 0,
+      id:  userId || 0,
       username:  username || "",
       email: email || "",
       fullName: fullName || username || "",
+      firstName: firstName,
+      lastName: lastName,
       role: role,
     })
 
@@ -83,9 +89,8 @@ export default function Home() {
         return (
             <InstructorLayout
                 onLogout={handleLogout}
-                instructorName={currentUser?.fullName || currentUser?. username || ""}
-                initialPage="profile"
-                userId={currentUser?.id}
+                user={currentUser}  // ✅ Pass the full user object
+                initialPage="subjects"
             />
         )
       default:

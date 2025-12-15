@@ -247,7 +247,7 @@ export default function CoursesPage() {
   // Fetch available instructors
   const fetchAvailableInstructors = async () => {
     try {
-      const response = await fetch('/api/courses/available-users? role=teacher')
+      const response = await fetch('/api/courses/available-users?role=teacher')
       const data = await response.json()
       if (data.success) {
         setAvailableInstructors(data. data)
@@ -392,8 +392,8 @@ export default function CoursesPage() {
 
     const endpoints:  { [key: string]: string } = {
       year: `/api/courses/school-years/${renameDialog.id}`,
-      semester: `/api/courses/semesters/${renameDialog. id}`,
-      gradeLevel: `/api/courses/grade-levels/${renameDialog. id}`,
+      semester: `/api/courses/semesters/${renameDialog.id}`,
+      gradeLevel: `/api/courses/grade-levels/${renameDialog.id}`,
       section: `/api/courses/sections/${renameDialog.id}`,
       subject: `/api/courses/subjects/${renameDialog.id}`,
     }
@@ -480,7 +480,7 @@ export default function CoursesPage() {
     if (!selectedSubject || !instructorToDelete) return
     try {
       const response = await fetch(
-          `/api/courses/subjects/${selectedSubject.id}/instructors? instructorId=${instructorToDelete}`,
+          `/api/courses/subjects/${selectedSubject.id}/instructors?instructorId=${instructorToDelete}`,
           { method: 'DELETE' }
       )
       const data = await response.json()
@@ -499,7 +499,7 @@ export default function CoursesPage() {
   const handleAssignStudent = async (studentId: number) => {
     if (!selectedSubject) return
     try {
-      const response = await fetch(`/api/courses/subjects/${selectedSubject. id}/students`, {
+      const response = await fetch(`/api/courses/subjects/${selectedSubject.id}/students`, {
         method: 'POST',
         headers: { 'Content-Type':  'application/json' },
         body: JSON.stringify({ studentId }),

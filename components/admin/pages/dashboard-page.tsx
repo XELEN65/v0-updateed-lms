@@ -64,8 +64,9 @@ export default function AdminDashboardPage({ onNavigate }: AdminDashboardPagePro
     return num. toLocaleString()
   }
 
-  // Format relative time
+  // Update the formatRelativeTime function to ensure local timezone display
   const formatRelativeTime = (dateString: string): string => {
+    // Parse the UTC timestamp and convert to local time
     const date = new Date(dateString)
     const now = new Date()
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
@@ -74,7 +75,14 @@ export default function AdminDashboardPage({ onNavigate }: AdminDashboardPagePro
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`
     if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
-    return date.toLocaleDateString()
+
+    // For older dates, show local date/time
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute:  '2-digit'
+    })
   }
 
   // Get activity icon based on action type and description
