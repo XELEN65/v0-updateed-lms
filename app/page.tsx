@@ -8,16 +8,38 @@ import StudentLayout from "@/components/student/student-layout"
 import InstructorLayout from "@/components/instructor/instructor-layout"
 import AdminLayout from "@/components/admin/admin-layout"
 
+// User type for storing logged-in user info
+interface CurrentUser {
+  id: number
+  username: string
+  email: string
+  fullName: string
+  role: "teacher" | "admin" | "student" | "instructor"
+}
+
 export default function Home() {
   const [currentPage, setCurrentPage] = useState<"landing" | "login" | "teacher" | "admin" | "student" | "instructor">(
-    "landing",
+      "landing",
   )
-  const [userRole, setUserRole] = useState<"teacher" | "admin" | "student" | "instructor" | null>(null)
-  const [userName, setUserName] = useState<string>("")
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
-  const handleLogin = (role: "teacher" | "admin" | "student" | "instructor", username?: string) => {
-    setUserRole(role)
-    setUserName(username || "")
+  const handleLogin = (
+      role: "teacher" | "admin" | "student" | "instructor",
+      username?: string,
+      userId?: number,
+      email?: string,
+      fullName?: string
+  ) => {
+    // Store user data
+    setCurrentUser({
+      id: userId || 0,
+      username:  username || "",
+      email: email || "",
+      fullName: fullName || username || "",
+      role: role,
+    })
+
+    // Navigate to appropriate dashboard
     if (role === "teacher" || role === "instructor") {
       setCurrentPage("instructor")
     } else if (role === "admin") {
@@ -28,8 +50,7 @@ export default function Home() {
   }
 
   const handleLogout = () => {
-    setUserRole(null)
-    setUserName("")
+    setCurrentUser(null)
     setCurrentPage("landing")
   }
 
@@ -42,11 +63,31 @@ export default function Home() {
       case "teacher":
         return <TeacherDashboard onLogout={handleLogout} />
       case "admin":
-        return <AdminLayout onLogout={handleLogout} />
+        return (
+            <AdminLayout
+                onLogout={handleLogout}
+                userId={currentUser?.id}
+                userName={currentUser?.fullName || currentUser?.username}
+            />
+        )
       case "student":
-        return <StudentLayout onLogout={handleLogout} studentName={userName} initialPage="profile" />
+        return (
+            <StudentLayout
+                onLogout={handleLogout}
+                studentName={currentUser?.fullName || currentUser?.username || ""}
+                initialPage="profile"
+                userId={currentUser?.id}
+            />
+        )
       case "instructor":
-        return <InstructorLayout onLogout={handleLogout} instructorName={userName} initialPage="profile" />
+        return (
+            <InstructorLayout
+                onLogout={handleLogout}
+                instructorName={currentUser?.fullName || currentUser?. username || ""}
+                initialPage="profile"
+                userId={currentUser?.id}
+            />
+        )
       default:
         return <LandingPage onNavigate={(page) => setCurrentPage(page)} />
     }
