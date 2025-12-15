@@ -158,7 +158,7 @@ export default function CoursesPage() {
   const fetchSemesters = async (schoolYearId: number) => {
     try {
       setIsLoading(true)
-      const response = await fetch(`/api/courses/semesters? schoolYearId=${schoolYearId}`)
+      const response = await fetch(`/api/courses/semesters?schoolYearId=${schoolYearId}`)
       const data = await response.json()
       if (data.success) {
         setSemesters(data.data)

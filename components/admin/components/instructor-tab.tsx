@@ -61,7 +61,7 @@ export default function InstructorTab() {
   const fetchInstructors = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/admin/users/by-role? role=teacher')
+      const response = await fetch('/api/admin/users/by-role?role=teacher')
       const data = await response.json()
       if (data.success) {
         setInstructors(data.users)

@@ -31,7 +31,7 @@ interface Student {
 }
 
 interface StudentFormData {
-  id?:  number
+  id?: number
   username: string
   email: string
   password: string
@@ -39,7 +39,7 @@ interface StudentFormData {
   middleName: string
   lastName: string
   employeeId: string
-  department:  string
+  department: string
 }
 
 export default function StudentTab() {
@@ -61,7 +61,7 @@ export default function StudentTab() {
   const fetchStudents = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/admin/users/by-role? role=student')
+      const response = await fetch('/api/admin/users/by-role?role=student')
       const data = await response.json()
       if (data.success) {
         setStudents(data.users)

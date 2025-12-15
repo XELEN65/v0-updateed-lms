@@ -60,7 +60,7 @@ export default function AdminTab() {
   const fetchAdmins = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/admin/users/by-role? role=admin')
+      const response = await fetch('/api/admin/users/by-role?role=admin')
       const data = await response.json()
       if (data.success) {
         setAdmins(data.users)
