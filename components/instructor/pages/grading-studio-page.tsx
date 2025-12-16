@@ -1,289 +1,415 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react"
-
-interface StudentSubmission {
-  id: string
-  studentName: string
-  dateSubmitted: string
-  attempts: number
-  status: "submitted" | "not-submitted"
-  currentGrade: number | null
-  maxGrade: number
-}
+import { Card, CardContent } from "@/components/ui/card"
+import { ArrowLeft, Save, Loader2, Search, CheckCircle, Clock, XCircle } from "lucide-react"
 
 interface GradingStudioProps {
   subject: any
-  taskId: string
+  taskId: number | null
   taskTitle: string
   onBack: () => void
 }
 
-export default function GradingStudio({ subject, taskId, taskTitle, onBack }: GradingStudioProps) {
-  const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
-  const [submissions, setSubmissions] = useState<StudentSubmission[]>([
-    {
-      id: "1",
-      studentName: "John Doe",
-      dateSubmitted: "2024-12-15 10:30 AM",
-      attempts: 1,
-      status: "submitted",
-      currentGrade: null,
-      maxGrade: 100,
-    },
-    {
-      id: "2",
-      studentName: "Jane Smith",
-      dateSubmitted: "2024-12-15 2:15 PM",
-      attempts: 2,
-      status: "submitted",
-      currentGrade: 88,
-      maxGrade: 100,
-    },
-    {
-      id: "3",
-      studentName: "Mike Johnson",
-      dateSubmitted: "2024-12-16 11:00 AM",
-      attempts: 1,
-      status: "submitted",
-      currentGrade: null,
-      maxGrade: 100,
-    },
-    {
-      id: "4",
-      studentName: "Sarah Williams",
-      dateSubmitted: "",
-      attempts: 0,
-      status: "not-submitted",
-      currentGrade: 0,
-      maxGrade: 100,
-    },
-    {
-      id: "5",
-      studentName: "David Brown",
-      dateSubmitted: "2024-12-15 3:45 PM",
-      attempts: 3,
-      status: "submitted",
-      currentGrade: 92,
-      maxGrade: 100,
-    },
-  ])
+interface StudentGrade {
+  id: number
+  name: string
+  email: string
+  studentNumber?: string
+  studentSubmissionId?: number
+  attemptNumber?: number
+  submittedAt?: string
+  grade: number | null
+  feedback: string
+  gradedAt?: string
+  status: "not_submitted" | "submitted" | "graded"
+}
 
-  const handleGradeChange = (studentId: string, newGrade: number) => {
-    setSubmissions((prev) =>
-      prev.map((sub) => (sub.id === studentId ? { ...sub, currentGrade: Math.min(newGrade, sub.maxGrade) } : sub)),
+interface SubmissionDetails {
+  id: number
+  name: string
+  description?: string
+  dueDate?: string
+  dueTime?: string
+  maxAttempts?: number
+}
+
+export default function GradingStudio({ subject, taskId, taskTitle, onBack }: GradingStudioProps) {
+  const [students, setStudents] = useState<StudentGrade[]>([])
+  const [submission, setSubmission] = useState<SubmissionDetails | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterStatus, setFilterStatus] = useState<"all" | "not_submitted" | "submitted" | "graded">("all")
+
+  // Track unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  const fetchGrades = useCallback(async () => {
+    if (!subject?.id || !taskId) return
+
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const response = await fetch(`/api/teacher/subjects/${subject.id}/submissions/${taskId}/grades`)
+      const data = await response.json()
+
+      if (data.success) {
+        setSubmission(data.submission)
+        setStudents(
+            data.students.map((s: any) => ({
+              ...s,
+              grade: s.grade,
+              feedback: s.feedback || "",
+            }))
+        )
+      } else {
+        setError(data.error || "Failed to fetch grades")
+      }
+    } catch (err) {
+      console.error("Failed to fetch grades:", err)
+      setError("Failed to connect to server")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [subject?.id, taskId])
+
+  useEffect(() => {
+    fetchGrades()
+  }, [fetchGrades])
+
+  const updateGrade = (studentId: number, grade: number | null) => {
+    setStudents(
+        students.map((s) =>
+            s.id === studentId ? { ...s, grade, status: grade !== null ? "graded" : s.status } : s
+        )
+    )
+    setHasUnsavedChanges(true)
+  }
+
+  const updateFeedback = (studentId: number, feedback: string) => {
+    setStudents(students.map((s) => (s.id === studentId ? { ...s, feedback } : s)))
+    setHasUnsavedChanges(true)
+  }
+
+  const handleSaveAll = async () => {
+    if (!subject?.id || !taskId) return
+
+    setIsSaving(true)
+    setError(null)
+    setSuccessMessage(null)
+
+    try {
+      const gradesToSave = students
+          .filter((s) => s.grade !== null)
+          .map((s) => ({
+            studentId: s.id,
+            grade: s.grade,
+            feedback: s.feedback,
+          }))
+
+      const response = await fetch(`/api/teacher/subjects/${subject.id}/submissions/${taskId}/grades`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grades: gradesToSave }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setSuccessMessage("Grades saved successfully!")
+        setHasUnsavedChanges(false)
+        setTimeout(() => setSuccessMessage(null), 3000)
+        fetchGrades() // Refresh to get updated data
+      } else {
+        setError(data.error || "Failed to save grades")
+      }
+    } catch (err) {
+      console.error("Failed to save grades:", err)
+      setError("Failed to save grades")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveSingleGrade = async (student: StudentGrade) => {
+    if (!subject?.id || !taskId || student.grade === null) return
+
+    setIsSaving(true)
+    try {
+      const response = await fetch(`/api/teacher/subjects/${subject.id}/submissions/${taskId}/grades`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: student.id,
+          grade: student.grade,
+          feedback: student.feedback,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setSuccessMessage(`Grade saved for ${student.name}`)
+        setTimeout(() => setSuccessMessage(null), 2000)
+      } else {
+        setError(data.error || "Failed to save grade")
+      }
+    } catch (err) {
+      console.error("Failed to save grade:", err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Filter students
+  const filteredStudents = students.filter((s) => {
+    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = filterStatus === "all" || s.status === filterStatus
+    return matchesSearch && matchesStatus
+  })
+
+  // Stats
+  const totalStudents = students.length
+  const gradedCount = students.filter((s) => s.status === "graded" || s.grade !== null).length
+  const submittedCount = students.filter((s) => s.status === "submitted").length
+  const notSubmittedCount = students.filter((s) => s.status === "not_submitted" && s.grade === null).length
+
+  // Calculate average grade
+  const gradesWithValues = students.filter((s) => s.grade !== null)
+  const averageGrade =
+      gradesWithValues.length > 0
+          ? (gradesWithValues.reduce((sum, s) => sum + (s.grade || 0), 0) / gradesWithValues.length).toFixed(1)
+          : "N/A"
+
+  if (isLoading) {
+    return (
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-primary/80">
+              <ArrowLeft className="h-5 w-5" />
+              <span>Back</span>
+            </button>
+            <h1 className="text-2xl font-bold text-white">Loading...</h1>
+          </div>
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          </div>
+        </div>
     )
   }
 
-  const handleSaveGrades = () => {
-    console.log("[v0] Saving grades:", submissions)
-    alert("Grades saved successfully!")
-  }
-
-  const graded = submissions.filter((s) => s.currentGrade !== null && s.currentGrade !== 0).length
-  const submitted = submissions.filter((s) => s.status === "submitted").length
-  const notSubmitted = submissions.filter((s) => s.status === "not-submitted").length
-
-  const sortedSubmissions = [...submissions].sort((a, b) => a.studentName.localeCompare(b.studentName))
-
-  const getGradeColor = (grade: number | null) => {
-    if (grade === null || grade === 0) return "bg-slate-800 text-slate-300"
-    if (grade >= 70) return "bg-green-900/30 text-green-400 border border-green-700"
-    if (grade >= 50) return "bg-yellow-900/30 text-yellow-400 border border-yellow-700"
-    return "bg-red-900/30 text-red-400 border border-red-700"
-  }
-
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-primary/80">
-          <ArrowLeft className="h-5 w-5" />
-          <span>Back</span>
-        </button>
-      </div>
-
-      {/* Task Info */}
-      <Card className="border border-slate-700/50 bg-slate-900">
-        <CardHeader>
-          <CardTitle>{taskTitle}</CardTitle>
-          <CardDescription>{subject?.name}</CardDescription>
-        </CardHeader>
-      </Card>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border border-slate-700/50 bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Total Submissions</p>
-                <p className="text-2xl font-bold text-blue-400">{submitted}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border border-slate-700/50 bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Graded</p>
-                <p className="text-2xl font-bold text-green-400">{graded}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border border-slate-700/50 bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Not Graded</p>
-                <p className="text-2xl font-bold text-amber-400">{submitted - graded}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border border-slate-700/50 bg-slate-900">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Not Submitted</p>
-                <p className="text-2xl font-bold text-red-400">{notSubmitted}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Submissions List - Redesigned */}
-      <div className="space-y-3">
-        <h2 className="text-xl font-bold text-white">Student Submissions</h2>
-        {sortedSubmissions.map((submission) => (
-          <div
-            key={submission.id}
-            className="border border-slate-700/50 bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl overflow-hidden shadow-lg transition-all hover:border-slate-600"
-          >
-            {/* Header */}
-            <button
-              onClick={() => setExpandedStudent(expandedStudent === submission.id ? null : submission.id)}
-              className="w-full p-5 flex items-center justify-between hover:bg-slate-700/30 transition-colors"
-            >
-              <div className="flex items-center gap-4 flex-1">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white font-bold flex-shrink-0 shadow-md">
-                  {submission.studentName.charAt(0)}
-                </div>
-                <div className="flex-1 text-left">
-                  <p className="font-semibold text-white text-lg">{submission.studentName}</p>
-                  <p className="text-sm text-slate-400">
-                    {submission.status === "submitted" ? `Submitted: ${submission.dateSubmitted}` : "Not Submitted"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  {submission.status === "submitted" ? (
-                    <div
-                      className={`px-4 py-2 rounded-lg font-bold text-base ${getGradeColor(submission.currentGrade)}`}
-                    >
-                      {submission.currentGrade !== null && submission.currentGrade !== 0
-                        ? `${submission.currentGrade}/${submission.maxGrade}`
-                        : "Not Graded"}
-                    </div>
-                  ) : (
-                    <div className="px-4 py-2 rounded-lg font-bold text-base bg-red-900/30 text-red-400 border border-red-700">
-                      0/{submission.maxGrade}
-                    </div>
-                  )}
-                  <p className="text-xs text-slate-400 mt-1">{submission.attempts} attempt(s)</p>
-                </div>
-                {expandedStudent === submission.id ? (
-                  <ChevronUp className="h-5 w-5 text-slate-400" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 text-slate-400" />
-                )}
-              </div>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-primary/80">
+              <ArrowLeft className="h-5 w-5" />
+              <span>Back</span>
             </button>
-
-            {/* Expanded Content - Improved UI */}
-            {expandedStudent === submission.id && (
-              <div className="px-5 pb-5 border-t border-slate-700/50 space-y-4 bg-slate-800/50">
-                {submission.status === "submitted" ? (
-                  <>
-                    <div>
-                      <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                        <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
-                        Submission Content
-                      </h3>
-                      <div className="p-4 bg-slate-900 rounded-lg border border-slate-700">
-                        <p className="text-sm text-slate-300">[Student submission content would appear here]</p>
-                        <Button variant="outline" className="mt-4 bg-slate-700 hover:bg-slate-600 border-slate-600">
-                          Download Submission
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                        <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                        Grade ({submission.maxGrade} points)
-                      </h3>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 relative">
-                          <input
-                            type="number"
-                            value={submission.currentGrade ?? ""}
-                            onChange={(e) => handleGradeChange(submission.id, Number.parseInt(e.target.value) || 0)}
-                            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all"
-                            min="0"
-                            max={submission.maxGrade}
-                          />
-                          <span className="absolute right-4 top-3 text-slate-400">/ {submission.maxGrade}</span>
-                        </div>
-                        {submission.currentGrade !== null && submission.currentGrade !== 0 && (
-                          <div
-                            className={`px-3 py-2 rounded-lg font-bold text-sm ${getGradeColor(submission.currentGrade)}`}
-                          >
-                            {submission.currentGrade >= 70
-                              ? "Pass"
-                              : submission.currentGrade >= 50
-                                ? "Borderline"
-                                : "Fail"}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-4 bg-red-900/20 border border-red-900/50 rounded-lg">
-                    <p className="text-sm text-red-300 font-medium">
-                      This student has not submitted yet. Mark as 0 or wait for submission.
-                    </p>
-                    <Button
-                      onClick={() => handleGradeChange(submission.id, 0)}
-                      className="mt-4 bg-red-600 hover:bg-red-700"
-                    >
-                      Mark as 0
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+            <div>
+              <h1 className="text-2xl font-bold text-white">Grading: {taskTitle || submission?.name}</h1>
+              <p className="text-slate-400">{subject.name}</p>
+            </div>
           </div>
-        ))}
-      </div>
+          <Button
+              onClick={handleSaveAll}
+              disabled={isSaving || !hasUnsavedChanges}
+              className="bg-green-600 hover:bg-green-700 gap-2"
+          >
+            <Save className="h-4 w-4" />
+            {isSaving ? "Saving..." : "Save All Grades"}
+          </Button>
+        </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-2 justify-end sticky bottom-6">
-        <Button onClick={onBack} variant="outline">
-          Cancel
-        </Button>
-        <Button onClick={handleSaveGrades} className="bg-primary hover:bg-primary/90">
-          Save All Grades
-        </Button>
+        {/* Messages */}
+        {error && (
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-red-400">{error}</div>
+        )}
+        {successMessage && (
+            <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 text-green-400">
+              {successMessage}
+            </div>
+        )}
+
+        {/* Submission Details */}
+        {submission && (
+            <Card className="border border-slate-700/50 bg-slate-900">
+              <CardContent className="pt-6">
+                <h3 className="font-semibold text-white mb-2">{submission.name}</h3>
+                {submission.description && <p className="text-slate-400 text-sm mb-3">{submission.description}</p>}
+                <div className="flex gap-4 text-sm text-slate-500">
+                  {submission.dueDate && <span>Due: {submission.dueDate}</span>}
+                  {submission.maxAttempts && <span>Max Attempts: {submission.maxAttempts}</span>}
+                </div>
+              </CardContent>
+            </Card>
+        )}
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4 text-center">
+              <p className="text-2xl font-bold text-white">{totalStudents}</p>
+              <p className="text-xs text-slate-400">Total Students</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4 text-center">
+              <p className="text-2xl font-bold text-green-400">{gradedCount}</p>
+              <p className="text-xs text-slate-400">Graded</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4 text-center">
+              <p className="text-2xl font-bold text-yellow-400">{submittedCount}</p>
+              <p className="text-xs text-slate-400">Pending</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4 text-center">
+              <p className="text-2xl font-bold text-red-400">{notSubmittedCount}</p>
+              <p className="text-xs text-slate-400">Not Submitted</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4 text-center">
+              <p className="text-2xl font-bold text-blue-400">{averageGrade}</p>
+              <p className="text-xs text-slate-400">Average</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+                type="text"
+                placeholder="Search students..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary"
+            />
+          </div>
+          <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+              className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary"
+          >
+            <option value="all">All Status</option>
+            <option value="graded">Graded</option>
+            <option value="submitted">Submitted (Pending)</option>
+            <option value="not_submitted">Not Submitted</option>
+          </select>
+        </div>
+
+        {/* Students List */}
+        {students.length === 0 ? (
+            <div className="text-center py-12 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+              <p className="text-slate-400 font-medium">No students enrolled in this subject</p>
+            </div>
+        ) : filteredStudents.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">No students match your filters</div>
+        ) : (
+            <div className="space-y-3">
+              {filteredStudents.map((student) => (
+                  <Card key={student.id} className="border border-slate-700/50 bg-slate-900">
+                    <CardContent className="pt-4 pb-4">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        {/* Student Info */}
+                        <div className="flex items-center gap-3 min-w-[200px]">
+                          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold flex-shrink-0">
+                            {student.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-medium text-white">{student.name}</p>
+                            <p className="text-xs text-slate-400">{student.studentNumber || student.email}</p>
+                          </div>
+                        </div>
+
+                        {/* Status Badge */}
+                        <div className="flex items-center gap-2">
+                          {student.status === "graded" || student.grade !== null ? (
+                              <span className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-green-900/30 text-green-300">
+                        <CheckCircle className="w-3 h-3" />
+                        Graded
+                      </span>
+                          ) : student.status === "submitted" ? (
+                              <span className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-yellow-900/30 text-yellow-300">
+                        <Clock className="w-3 h-3" />
+                        Pending
+                      </span>
+                          ) : (
+                              <span className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-900/30 text-red-300">
+                        <XCircle className="w-3 h-3" />
+                        Not Submitted
+                      </span>
+                          )}
+                        </div>
+
+                        {/* Grade Input */}
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Grade</label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.5"
+                                value={student.grade ?? ""}
+                                onChange={(e) =>
+                                    updateGrade(student.id, e.target.value ? parseFloat(e.target.value) : null)
+                                }
+                                placeholder="0-100"
+                                className="w-24 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-center focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-[200px]">
+                            <label className="text-xs text-slate-400 block mb-1">Feedback (optional)</label>
+                            <input
+                                type="text"
+                                value={student.feedback}
+                                onChange={(e) => updateFeedback(student.id, e.target.value)}
+                                placeholder="Add feedback..."
+                                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                          <Button
+                              onClick={() => handleSaveSingleGrade(student)}
+                              disabled={isSaving || student.grade === null}
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700 mt-5"
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Submission Info */}
+                      {student.submittedAt && (
+                          <div className="mt-3 pt-3 border-t border-slate-700/50 text-xs text-slate-500">
+                            Submitted: {new Date(student.submittedAt).toLocaleString()}
+                            {student.attemptNumber && ` (Attempt ${student.attemptNumber})`}
+                          </div>
+                      )}
+                    </CardContent>
+                  </Card>
+              ))}
+            </div>
+        )}
+
+        {/* Unsaved Changes Warning */}
+        {hasUnsavedChanges && (
+            <div className="fixed bottom-4 right-4 bg-yellow-600 text-white px-4 py-2 rounded-lg shadow-lg">
+              You have unsaved changes
+            </div>
+        )}
       </div>
-    </div>
   )
 }

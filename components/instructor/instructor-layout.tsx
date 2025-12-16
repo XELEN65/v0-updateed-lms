@@ -98,7 +98,7 @@ export default function InstructorLayout({
             />
         )
       case "inbox":
-        return <InstructorInbox onItemClick={handleSubjectClick} />
+        return <InstructorInbox teacherId={teacherId} onItemClick={handleSubjectClick} />
       case "subject-detail":
         return (
             <InstructorSubjectDetail

@@ -1,337 +1,432 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, RefreshCw, Eye, EyeOff, Check, X, Maximize2 } from "lucide-react"
+import { Card, CardContent } from "@/components/ui/card"
+import { ArrowLeft, Check, X, Clock, Loader2, Users } from "lucide-react"
+
+interface Member {
+  id: number
+  name: string
+  email?: string
+  studentNumber?: string
+}
 
 interface SessionStudioProps {
   subject: any
   isNewSession?: boolean
-  sessionId?: string
+  sessionId?: number
+  members?: Member[]
   onBack: () => void
-  onSessionSave?: (sessionData: any) => void
+  onSessionSave: (sessionData: any) => void
 }
 
 interface StudentAttendance {
-  id: string
+  id: number
   name: string
-  status: "present" | "absent" | "pending"
-  grade: number
+  status: "present" | "absent" | "late" | "excused"
 }
 
 export default function SessionStudio({
-  subject,
-  isNewSession = true,
-  sessionId,
-  onBack,
-  onSessionSave,
-}: SessionStudioProps) {
-  const [sessionVisible, setSessionVisible] = useState(true)
-  const [showQRCode, setShowQRCode] = useState(false)
-  const [qrFullscreen, setQrFullscreen] = useState(false)
-  const [qrCode, setQrCode] = useState("")
-  const [sessionEnded, setSessionEnded] = useState(false)
-  const [dueDate, setDueDate] = useState("")
-  const [dueTime, setDueTime] = useState("")
+                                        subject,
+                                        isNewSession = true,
+                                        sessionId,
+                                        members = [],
+                                        onBack,
+                                        onSessionSave,
+                                      }: SessionStudioProps) {
+  const [sessionDate, setSessionDate] = useState(new Date().toISOString().split("T")[0])
+  const [sessionTime, setSessionTime] = useState(
+      new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute:  "2-digit", hour12: false })
+  )
+  const [isVisible, setIsVisible] = useState(true)
+  const [students, setStudents] = useState<StudentAttendance[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
 
-  const [students, setStudents] = useState<StudentAttendance[]>([
-    { id: "1", name: "Alexander Torres", status: "pending", grade: 0 },
-    { id: "2", name: "Benjamin Martinez", status: "pending", grade: 0 },
-    { id: "3", name: "Catherine Lopez", status: "pending", grade: 0 },
-    { id: "4", name: "Diana Johnson", status: "pending", grade: 0 },
-    { id: "5", name: "Edwin Garcia", status: "pending", grade: 0 },
-    { id: "6", name: "Fiona Anderson", status: "pending", grade: 0 },
-    { id: "7", name: "Gregory Williams", status: "pending", grade: 0 },
-    { id: "8", name: "Hannah Brown", status: "pending", grade: 0 },
-    { id: "9", name: "Isaac Davis", status: "pending", grade: 0 },
-    { id: "10", name: "Julia Miller", status: "pending", grade: 0 },
-  ])
-
-  const generateQRCode = () => {
-    const code = `SESSION-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    setQrCode(code)
-    setShowQRCode(true)
-  }
-
-  const regenerateQRCode = () => {
-    generateQRCode()
-  }
-
-  const handleMarkStudent = (studentId: string, status: "present" | "absent") => {
-    setStudents((prev) =>
-      prev.map((student) =>
-        student.id === studentId
-          ? {
-              ...student,
-              status,
-              grade: status === "present" ? 100 : 0,
-            }
-          : student,
-      ),
-    )
-  }
-
-  const handleConfirmSession = () => {
-    if (students.some((s) => s.status === "pending")) {
-      alert("Please mark all students as present or absent before confirming.")
-      return
+  // Initialize students from members
+  useEffect(() => {
+    if (members.length > 0 && students.length === 0) {
+      setStudents(
+          members.map((m) => ({
+            id: m.id,
+            name: m.name,
+            status: "absent" as const,
+          }))
+      )
     }
+  }, [members])
 
-    const sessionData = {
-      subject: subject.name,
-      visibility: sessionVisible ? "public" : "hidden",
-      dueDate,
-      dueTime,
-      students: students,
-      timestamp: new Date().toISOString(),
+  // Load existing session data if editing
+  useEffect(() => {
+    if (!isNewSession && sessionId && subject?.id) {
+      loadSessionData()
     }
+  }, [isNewSession, sessionId, subject?.id])
 
-    console.log("[v0] Session Data:", sessionData)
+  const loadSessionData = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`/api/teacher/subjects/${subject.id}/attendance/${sessionId}`)
+      const data = await response.json()
 
-    onSessionSave?.(sessionData)
+      if (data.success) {
+        setSessionDate(data.session.date)
+        setSessionTime(data.session.time || "")
+        setIsVisible(data.session.visible)
 
-    alert("Session confirmed! Attendance records have been updated.")
-    setSessionEnded(true)
-    setTimeout(() => {
-      onBack()
-    }, 1500)
+        // Merge attendance records with members
+        const attendanceMap = new Map(
+            data.session.records?.map((r: any) => [r.studentId, r.status])
+        )
+        setStudents(
+            members.map((m) => ({
+              id: m.id,
+              name: m.name,
+              status: (attendanceMap.get(m.id) as any) || "absent",
+            }))
+        )
+      }
+    } catch (error) {
+      console.error("Failed to load session:", error)
+      setError("Failed to load session data")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
+  const updateStatus = (studentId: number, status: "present" | "absent" | "late" | "excused") => {
+    setStudents(students.map((s) => (s.id === studentId ? { ...s, status } : s)))
+  }
+
+  const markAllPresent = () => {
+    setStudents(students.map((s) => ({ ...s, status: "present" })))
+  }
+
+  const markAllAbsent = () => {
+    setStudents(students.map((s) => ({ ...s, status: "absent" })))
+  }
+
+  const handleSave = async () => {
+    if (!subject?.id) return
+
+    setIsSaving(true)
+    setError(null)
+
+    try {
+      const endpoint = isNewSession
+          ? `/api/teacher/subjects/${subject.id}/attendance`
+          : `/api/teacher/subjects/${subject.id}/attendance/${sessionId}`
+
+      const response = await fetch(endpoint, {
+        method: isNewSession ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON. stringify({
+          date: sessionDate,
+          time: sessionTime,
+          isVisible,
+          students: students.map((s) => ({ id: s.id, status: s.status })),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        onSessionSave({
+          id: data.session?.id || sessionId,
+          date: sessionDate,
+          time: sessionTime,
+          isVisible,
+          students,
+        })
+      } else {
+        setError(data.error || "Failed to save session")
+      }
+    } catch (error) {
+      console.error("Failed to save session:", error)
+      setError("Failed to save session")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!subject?. id || !sessionId || isNewSession) return
+
+    if (!confirm("Are you sure you want to delete this attendance session?")) return
+
+    setIsSaving(true)
+    try {
+      const response = await fetch(`/api/teacher/subjects/${subject.id}/attendance/${sessionId}`, {
+        method: "DELETE",
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        onBack()
+      } else {
+        setError(data.error || "Failed to delete session")
+      }
+    } catch (error) {
+      console.error("Failed to delete session:", error)
+      setError("Failed to delete session")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Stats
   const presentCount = students.filter((s) => s.status === "present").length
   const absentCount = students.filter((s) => s.status === "absent").length
-  const pendingCount = students.filter((s) => s.status === "pending").length
+  const lateCount = students.filter((s) => s.status === "late").length
+  const excusedCount = students.filter((s) => s.status === "excused").length
 
-  if (qrFullscreen && showQRCode && qrCode) {
+  // Filter students by search
+  const filteredStudents = students.filter((s) =>
+      s.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  if (isLoading) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6">
-          <div className="w-80 h-80 bg-white p-8 rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-xs font-mono text-gray-800 mb-2">QR CODE</p>
-              <p className="text-4xl font-bold text-gray-800">{qrCode.substring(0, 8)}</p>
-              <p className="text-xs text-gray-600 mt-2">Scan with phone camera</p>
-            </div>
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-primary/80">
+              <ArrowLeft className="h-5 w-5" />
+              <span>Back</span>
+            </button>
+            <h1 className="text-2xl font-bold text-white">Loading Session... </h1>
           </div>
-          <p className="text-white text-xl font-mono">{qrCode}</p>
-          <Button onClick={() => setQrFullscreen(false)} className="bg-red-600 hover:bg-red-700">
-            Exit Fullscreen
-          </Button>
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          </div>
         </div>
-      </div>
     )
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-primary/80">
-          <ArrowLeft className="h-5 w-5" />
-          <span>Back</span>
-        </button>
-        <h1 className="text-2xl font-bold text-white">{isNewSession ? "Create New Session" : "Edit Session"}</h1>
-      </div>
-
-      {/* Session Header */}
-      <Card className="border border-slate-700/50 bg-slate-900">
-        <CardHeader>
-          <CardTitle>{subject?.name}</CardTitle>
-          <CardDescription>{subject?.section}</CardDescription>
-        </CardHeader>
-      </Card>
-
-      {/* Session Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Session Visibility */}
-        <Card className="border border-slate-700/50 bg-slate-900">
-          <CardHeader>
-            <CardTitle className="text-lg">Session Visibility</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setSessionVisible(true)}
-                className={sessionVisible ? "bg-green-600 hover:bg-green-700" : "bg-slate-700 hover:bg-slate-600"}
-              >
-                Public
-              </Button>
-              <Button
-                onClick={() => setSessionVisible(false)}
-                className={!sessionVisible ? "bg-amber-600 hover:bg-amber-700" : "bg-slate-700 hover:bg-slate-600"}
-              >
-                Hidden
-              </Button>
-            </div>
-            <p className="text-xs text-slate-400">
-              {sessionVisible ? "Session is visible to students" : "Session is hidden from students"}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Due Date & Time */}
-        <Card className="border border-slate-700/50 bg-slate-900">
-          <CardHeader>
-            <CardTitle className="text-lg">Due Date & Time</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-primary/80">
+              <ArrowLeft className="h-5 w-5" />
+              <span>Back</span>
+            </button>
             <div>
-              <label className="text-sm font-semibold text-slate-300 mb-2 block">Date</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-              />
+              <h1 className="text-2xl font-bold text-white">
+                {isNewSession ? "New Attendance Session" : "Edit Attendance Session"}
+              </h1>
+              <p className="text-slate-400">{subject.name}</p>
             </div>
-            <div>
-              <label className="text-sm font-semibold text-slate-300 mb-2 block">Time</label>
-              <input
-                type="time"
-                value={dueTime}
-                onChange={(e) => setDueTime(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* QR Code Section */}
-      <Card className="border border-slate-700/50 bg-slate-900">
-        <CardHeader>
-          <CardTitle>QR Code</CardTitle>
-          <CardDescription>Students scan this code to mark attendance</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </div>
           <div className="flex gap-2">
-            <Button onClick={isNewSession ? generateQRCode : regenerateQRCode} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              {isNewSession ? "Generate QR Code" : "Regenerate QR Code"}
-            </Button>
-            <Button onClick={() => setShowQRCode(!showQRCode)} variant="outline" className="gap-2">
-              {showQRCode ? (
-                <>
-                  <EyeOff className="h-4 w-4" />
-                  Hide
-                </>
-              ) : (
-                <>
-                  <Eye className="h-4 w-4" />
-                  View
-                </>
-              )}
+            {!isNewSession && (
+                <Button
+                    onClick={handleDelete}
+                    disabled={isSaving}
+                    variant="outline"
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/20"
+                >
+                  Delete Session
+                </Button>
+            )}
+            <Button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
+              {isSaving ? "Saving..." : "Save Session"}
             </Button>
           </div>
+        </div>
 
-          {showQRCode && qrCode && (
-            <div className="flex flex-col items-center gap-4 p-4 bg-slate-800 rounded-lg">
-              <div className="w-48 h-48 bg-white p-4 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <p className="text-xs font-mono text-gray-800 mb-2">QR CODE</p>
-                  <p className="text-2xl font-bold text-gray-800">{qrCode.substring(0, 8)}</p>
-                  <p className="text-xs text-gray-600 mt-2">Scan with phone camera</p>
+        {error && (
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-red-400">{error}</div>
+        )}
+
+        {/* Session Settings */}
+        <Card className="border border-slate-700/50 bg-slate-900">
+          <CardContent className="pt-6 space-y-4">
+            <h3 className="font-semibold text-white mb-4">Session Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm text-slate-400 mb-2 block">Date *</label>
+                <input
+                    type="date"
+                    value={sessionDate}
+                    onChange={(e) => setSessionDate(e.target.value)}
+                    className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-slate-400 mb-2 block">Time</label>
+                <input
+                    type="time"
+                    value={sessionTime}
+                    onChange={(e) => setSessionTime(e.target.value)}
+                    className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-white cursor-pointer">
+                  <input
+                      type="checkbox"
+                      checked={isVisible}
+                      onChange={(e) => setIsVisible(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                  />
+                  Visible to Students
+                </label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/20 rounded-lg">
+                  <Users className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-white">{students.length}</p>
+                  <p className="text-xs text-slate-400">Total</p>
                 </div>
               </div>
-              <p className="text-xs text-slate-400 text-center">Code: {qrCode}</p>
-              <Button onClick={() => setQrFullscreen(true)} className="gap-2 bg-blue-600 hover:bg-blue-700">
-                <Maximize2 className="h-4 w-4" />
-                Fullscreen
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-500/20 rounded-lg">
+                  <Check className="w-5 h-5 text-green-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-green-400">{presentCount}</p>
+                  <p className="text-xs text-slate-400">Present</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500/20 rounded-lg">
+                  <X className="w-5 h-5 text-red-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-400">{absentCount}</p>
+                  <p className="text-xs text-slate-400">Absent</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-700/50 bg-slate-900">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-500/20 rounded-lg">
+                  <Clock className="w-5 h-5 text-yellow-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-yellow-400">{lateCount}</p>
+                  <p className="text-xs text-slate-400">Late</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Student Attendance */}
-      <Card className="border border-slate-700/50 bg-slate-900">
-        <CardHeader>
-          <CardTitle>Student Attendance & Grades</CardTitle>
-          <CardDescription>Manage attendance for {subject?.totalStudents || 0} students</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="p-3 bg-slate-800 rounded-lg text-center">
-              <p className="text-2xl font-bold text-green-400">{presentCount}</p>
-              <p className="text-xs text-slate-400">Present (100%)</p>
-            </div>
-            <div className="p-3 bg-slate-800 rounded-lg text-center">
-              <p className="text-2xl font-bold text-red-400">{absentCount}</p>
-              <p className="text-xs text-slate-400">Absent (0%)</p>
-            </div>
-            <div className="p-3 bg-slate-800 rounded-lg text-center">
-              <p className="text-2xl font-bold text-amber-400">{pendingCount}</p>
-              <p className="text-xs text-slate-400">Pending</p>
-            </div>
+        {/* Quick Actions & Search */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex gap-2">
+            <Button onClick={markAllPresent} variant="outline" className="text-green-400 border-green-500/50 hover:bg-green-500/20">
+              Mark All Present
+            </Button>
+            <Button onClick={markAllAbsent} variant="outline" className="text-red-400 border-red-500/50 hover:bg-red-500/20">
+              Mark All Absent
+            </Button>
           </div>
+          <input
+              type="text"
+              placeholder="Search students..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary w-full md:w-64"
+          />
+        </div>
 
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {students.map((student) => (
-              <div
-                key={student.id}
-                className="p-4 bg-slate-800 border border-slate-700/50 rounded-lg flex items-center justify-between"
-              >
-                <div className="flex-1">
-                  <p className="font-medium text-white">{student.name}</p>
-                  <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
-                    <span>
-                      {student.status === "present" && "✓ Present"}
-                      {student.status === "absent" && "✗ Absent"}
-                      {student.status === "pending" && "⏳ Pending"}
-                    </span>
-                    <span
-                      className={`font-semibold ${
-                        student.grade === 100
-                          ? "text-green-400"
-                          : student.grade === 0 && student.status !== "pending"
-                            ? "text-red-400"
-                            : "text-slate-500"
-                      }`}
-                    >
-                      {student.status !== "pending" && `Grade: ${student.grade}%`}
-                    </span>
+        {/* Students List */}
+        {students.length === 0 ? (
+            <div className="text-center py-12 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+              <Users size={48} className="mx-auto text-slate-600 mb-4" />
+              <p className="text-slate-400 font-medium mb-2">No students enrolled</p>
+              <p className="text-slate-500 text-sm">Students need to be enrolled in this subject first</p>
+            </div>
+        ) : (
+            <div className="space-y-2">
+              {filteredStudents.map((student) => (
+                  <div
+                      key={student.id}
+                      className="p-4 bg-slate-900 border border-slate-700/50 rounded-lg flex items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+                        {student.name.charAt(0)}
+                      </div>
+                      <p className="font-medium text-white">{student.name}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                          onClick={() => updateStatus(student.id, "present")}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              student.status === "present"
+                                  ? "bg-green-600 text-white"
+                                  : "bg-slate-800 text-slate-400 hover:bg-green-600/20 hover:text-green-400"
+                          }`}
+                      >
+                        Present
+                      </button>
+                      <button
+                          onClick={() => updateStatus(student.id, "late")}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              student.status === "late"
+                                  ? "bg-yellow-600 text-white"
+                                  : "bg-slate-800 text-slate-400 hover:bg-yellow-600/20 hover:text-yellow-400"
+                          }`}
+                      >
+                        Late
+                      </button>
+                      <button
+                          onClick={() => updateStatus(student.id, "excused")}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              student.status === "excused"
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-slate-800 text-slate-400 hover:bg-blue-600/20 hover:text-blue-400"
+                          }`}
+                      >
+                        Excused
+                      </button>
+                      <button
+                          onClick={() => updateStatus(student.id, "absent")}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              student.status === "absent"
+                                  ? "bg-red-600 text-white"
+                                  : "bg-slate-800 text-slate-400 hover:bg-red-600/20 hover:text-red-400"
+                          }`}
+                      >
+                        Absent
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleMarkStudent(student.id, "present")}
-                    className={`gap-1 ${
-                      student.status === "present"
-                        ? "bg-green-600 hover:bg-green-700"
-                        : "bg-slate-700 hover:bg-slate-600"
-                    }`}
-                    size="sm"
-                  >
-                    <Check className="h-4 w-4" />
-                    Present
-                  </Button>
-                  <Button
-                    onClick={() => handleMarkStudent(student.id, "absent")}
-                    className={`gap-1 ${
-                      student.status === "absent" ? "bg-red-600 hover:bg-red-700" : "bg-slate-700 hover:bg-slate-600"
-                    }`}
-                    size="sm"
-                  >
-                    <X className="h-4 w-4" />
-                    Absent
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </div>
+        )}
 
-      {/* Action Buttons */}
-      <div className="flex gap-2 justify-end">
-        <Button onClick={onBack} variant="outline">
-          Cancel
-        </Button>
-        <Button onClick={handleConfirmSession} className="bg-primary hover:bg-primary/90">
-          {sessionEnded ? "Session Confirmed" : "Confirm Session"}
-        </Button>
+        {filteredStudents.length === 0 && students.length > 0 && (
+            <div className="text-center py-8 text-slate-400">
+              No students found matching "{searchTerm}"
+            </div>
+        )}
       </div>
-    </div>
   )
 }
